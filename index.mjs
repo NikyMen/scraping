@@ -39,7 +39,7 @@ try {
     await stockCheckbox.scrollIntoViewIfNeeded()
     await stockCheckbox.click()
     await page.waitForLoadState("domcontentloaded")
-    await page.waitForTimeout(2000) // esperar recarga por AJAX
+    await page.waitForTimeout(2000)
   }
 } catch (e) {
   console.log("⚠️ No se pudo activar el filtro de stock:", e.message)
@@ -56,16 +56,22 @@ const extraerProductosEnPagina = async (page) => {
       const precioTexto = card.querySelector(".precio-lista span")?.textContent || ""
       const precio = parseFloat(precioTexto.replace("$", "").replace(/\./g, "").replace(",", ".").trim())
 
+      // 👉 Buscar div que contiene "Código: ..."
+      const codigoEl = Array.from(card.querySelectorAll("div"))
+        .find(div => div.textContent?.includes("Código:"))
+
+      const codigo = codigoEl?.textContent?.split("Código:")[1]?.trim() || ""
+
       return {
+        codigo,
         nombre,
         precio: isNaN(precio) ? 0 : precio,
-        descripcion: "Producto de Intercap con stock",
+        descripcion: "Repuestos Mendez",
         imagen
       }
-    }).filter(p => p.nombre && p.precio > 0)
+    }).filter(p => p.codigo && p.nombre && p.precio > 0)
   )
 }
-
 // 6. Recorrer páginas
 let productos = []
 let paginaActual = 1
@@ -75,7 +81,7 @@ while (true) {
   const nuevos = await extraerProductosEnPagina(page)
   productos.push(...nuevos)
 
-  // Buscar botón "siguiente" visible (pueden cambiar IDs)
+  // Buscar botón "siguiente"
   const botones = await page.$$('a[aria-label="Ir a la página siguiente"]')
   let siguiente = null
 
@@ -88,22 +94,37 @@ while (true) {
 
   if (!siguiente) break
 
-  try {
-    await siguiente.scrollIntoViewIfNeeded()
-    await Promise.all([
-      page.waitForLoadState("domcontentloaded"),
-      siguiente.click()
-    ])
-    await page.waitForTimeout(1500)
-    paginaActual++
-  } catch (err) {
-    console.log("⚠️ No se pudo avanzar de página:", err.message)
+  // Reintentar hasta 5 veces si falla el click
+  let intentos = 0
+  let exito = false
+
+  while (intentos < 5) {
+    try {
+      await siguiente.scrollIntoViewIfNeeded()
+      await Promise.all([
+        page.waitForLoadState("domcontentloaded"),
+        siguiente.click()
+      ])
+      await page.waitForTimeout(1500)
+      exito = true
+      break
+    } catch (err) {
+      console.warn(`🔁 Reintentando avanzar de página (${intentos + 1}/5)...`)
+      intentos++
+      await page.waitForTimeout(1000)
+    }
+  }
+
+  if (!exito) {
+    console.log("⚠️ No se pudo avanzar de página después de varios intentos.")
     break
   }
+
+  paginaActual++
 }
 
 await browser.close()
 
-// 7. Guardar
+// 7. Guardar productos
 await writeFile(`${savePath}/productos.json`, JSON.stringify(productos, null, 2), "utf-8")
 console.log(`✅ ${productos.length} productos guardados en data/productos.json`)
