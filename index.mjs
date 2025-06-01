@@ -94,11 +94,11 @@ while (true) {
 
   if (!siguiente) break
 
-  // Reintentar hasta 5 veces si falla el click
+  // Reintentar hasta 25 veces si falla el click
   let intentos = 0
   let exito = false
 
-  while (intentos < 5) {
+  while (intentos < 25) {
     try {
       await siguiente.scrollIntoViewIfNeeded()
       await Promise.all([
